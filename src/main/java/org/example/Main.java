@@ -78,13 +78,26 @@ public class Main {
         String lang = ConsoleUtil.readLine("语言 (java/python/go等): ");
         String desc = ConsoleUtil.readLine("需求描述: ");
         String prompt = "请用 " + lang + " 实现以下需求，只返回完整代码：\n" + desc;
-        String code = callCode(prompt);
-        String file = "output/" + FileTool.guessFileName(lang);
-        try {
-            FileTool.write(file, code);
-            ConsoleUtil.printLine("已生成文件: " + Paths.get(file).toAbsolutePath());
-        } catch (IOException e) {
-            ConsoleUtil.printLine("写文件失败: " + e.getMessage());
+
+        ConsoleUtil.printLine("正在生成代码，请稍候...");
+        String raw   = callCode(prompt);          // 调接口
+        String[] arr = CodeExtractor.split(raw);  // 分离
+        String text  = arr[0];
+        String code  = arr[1];
+
+        if (code != null) {
+            String file = "output/" + FileTool.guessFileName(lang);
+            try {
+                FileTool.write(file, code);
+                ConsoleUtil.printLine("代码已生成 → " + Paths.get(file).toAbsolutePath());
+            } catch (IOException e) {
+                ConsoleUtil.printLine("写文件失败: " + e.getMessage());
+            }
+        }
+        // 无论有没有代码，都把文字部分弹窗/控制台显示
+        if (!text.isEmpty()) {
+            ConsoleUtil.printLine("------ 文字说明 ------");
+            ConsoleUtil.printLine(text);
         }
     }
 
