@@ -6,11 +6,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 public class DeepSeekClient {
     private static final String API = "https://api.deepseek.com/v1/chat/completions";
-    private final OkHttpClient client = new OkHttpClient();
+//    private final OkHttpClient client = new OkHttpClient();
+    private final OkHttpClient client = new OkHttpClient.Builder()
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(300, TimeUnit.SECONDS)   // 超时延长了
+            .writeTimeout(20, TimeUnit.SECONDS)
+            .build();
+
     private final ObjectMapper mapper = new ObjectMapper();
 
     public String chat(String key, String user) throws IOException {

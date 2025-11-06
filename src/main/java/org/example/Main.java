@@ -100,8 +100,10 @@ public class Main {
         String outline = callChat("请为主题《" + topic + "》写一份三级大纲，用罗马数字编号：");
         String body = callChat("根据以下大纲写一篇 800 字左右论文正文：\n" + outline);
         String file = "output/" + topic.replaceAll("\\s+", "_") + ".docx";
+
         try {
             WordExporter.export(topic, outline, body, file);
+
             ConsoleUtil.printLine("Word 已生成: " + Paths.get(file).toAbsolutePath());
         } catch (IOException e) {
             ConsoleUtil.printLine("生成 Word 失败: " + e.getMessage());
