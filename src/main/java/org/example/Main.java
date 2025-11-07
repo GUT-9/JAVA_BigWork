@@ -1,10 +1,18 @@
 package org.example;
 
+import org.example.model.ConversationMeta;
 import org.example.model.Message;
 import org.example.util.ConsoleUtil;
 
 import java.io.IOException;
 import java.nio.file.Paths;
+
+import java.time.*;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.IntStream;
 
 public class Main {
     private static final String KEY = System.getenv().getOrDefault("DEEPSEEK_KEY",
@@ -12,7 +20,7 @@ public class Main {
     private static final DeepSeekClient CLIENT = new DeepSeekClient();
     private static final ConversationService CONV = new ConversationService();
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         try {
             CONV.load();
             ConsoleUtil.printLine("已加载历史对话 " + CONV.getHistory().size() + " 条");
@@ -55,15 +63,111 @@ public class Main {
     }
 
     /* ---------------- 功能 ---------------- */
-    private static void freeChat() {
-        String q = ConsoleUtil.readLine("你: ");
+    /* =================  自由对话 v2  ================= */
+    private static void freeChat() throws IOException {
+        DateTimeFormatter FMT = DateTimeFormatter.ofPattern("MM-dd HH:mm");
+        while (true) {
+            ConsoleUtil.printLine("\n====== 自由对话 ======");
+            List<ConversationMeta> list = ConversationStore.listMeta();
+            if (list.isEmpty()) {
+                ConsoleUtil.printLine("暂无历史对话");
+            } else {
+                IntStream.range(0, list.size())
+                        .forEach(i -> ConsoleUtil.printLine(
+                                (i + 1) + ". " + list.get(i).getTitle() +
+                                        "  【" + Instant.ofEpochMilli(list.get(i).getLastMsgTime())
+                                        .atZone(ZoneId.systemDefault()).format(FMT) + "】"));
+            }
+            ConsoleUtil.printLine("0. 新建对话");
+            ConsoleUtil.printLine("提示：输入序号继续对话，或输入 d+序号 删除，q 返回");
+            String in = ConsoleUtil.readLine("请选择: ").trim();
+            if ("q".equalsIgnoreCase(in)) return;
+            if (in.startsWith("d")) {                // 删除逻辑
+                try {
+                    int idx = Integer.parseInt(in.substring(1)) - 1;
+                    if (idx < 0 || idx >= list.size()) {
+                        ConsoleUtil.printLine("序号无效");
+                        continue;
+                    }
+                    deleteConversation(list.get(idx));
+                } catch (NumberFormatException e) {
+                    ConsoleUtil.printLine("格式错误，示例：d2 表示删除第2条");
+                }
+                continue;   // 删完刷新列表
+            }
+            if ("0".equals(in)) {
+                newConversation();
+                continue;
+            }
+            // 继续历史对话
+            int idx;
+            try {
+                idx = Integer.parseInt(in) - 1;
+            } catch (NumberFormatException e) {
+                ConsoleUtil.printLine("输入无效");
+                continue;
+            }
+            if (idx < 0 || idx >= list.size()) {
+                ConsoleUtil.printLine("序号超出范围");
+                continue;
+            }
+            continueConversation(list.get(idx));
+        }
+    }
+
+    /* ----------------  子流程1：新建对话  ---------------- */
+    private static void newConversation() {
+        String first = ConsoleUtil.readLine("请输入第一句话: ").trim();
+        if (first.isEmpty()) return;
+        String id = UUID.randomUUID().toString();
+        ConversationMeta meta = ConversationMeta.builder()
+                .id(id)
+                .title(first.length() > 20 ? first.substring(0, 20) + "…" : first)
+                .createTime(System.currentTimeMillis())
+                .lastMsgTime(System.currentTimeMillis())
+                .build();
+        List<Message> msgs = new ArrayList<>();
+        msgs.add(new Message("user", first));
         try {
-            String ans = CLIENT.chatWithContext(KEY, CONV.getHistory(), q);
-            CONV.add(new Message("user", q));
-            CONV.add(new Message("assistant", ans));
-            ConsoleUtil.printLine("AI: " + ans);
+            String resp = CLIENT.chatWithContext(KEY, msgs, first);
+            msgs.add(new Message("assistant", resp));
+            ConversationStore.save(meta, msgs);
+            ConsoleUtil.printLine("AI: " + resp);
         } catch (IOException e) {
             ConsoleUtil.printLine("调用失败: " + e.getMessage());
+        }
+    }
+
+    /* ----------------  子流程2：继续对话  ---------------- */
+    private static void continueConversation(ConversationMeta meta) {
+        ConsoleUtil.printLine("---- 历史消息 ----");
+        try {
+            List<Message> msgs = ConversationStore.loadMsg(meta.getId());
+            msgs.forEach(m -> ConsoleUtil.printLine(
+                    (m.getRole().equals("user") ? "【你】" : "【AI】") + m.getContent()));
+            ConsoleUtil.printLine("------------------");
+            while (true) {
+                String in = ConsoleUtil.readLine("你（输入 q 返回）: ").trim();
+                if ("q".equalsIgnoreCase(in)) break;
+                msgs.add(new Message("user", in));
+                String resp = CLIENT.chatWithContext(KEY, msgs, in);
+                ConsoleUtil.printLine("AI: " + resp);
+                msgs.add(new Message("assistant", resp));
+                meta.setLastMsgTime(System.currentTimeMillis());
+                ConversationStore.save(meta, msgs);
+            }
+        } catch (IOException e) {
+            ConsoleUtil.printLine("加载失败: " + e.getMessage());
+        }
+    }
+
+    /* ----------------  子流程3：删除对话  ---------------- */
+    private static void deleteConversation(ConversationMeta meta) {
+        try {
+            ConversationStore.delete(meta.getId());
+            ConsoleUtil.printLine("已删除: " + meta.getTitle());
+        } catch (IOException e) {
+            ConsoleUtil.printLine("删除失败: " + e.getMessage());
         }
     }
 
