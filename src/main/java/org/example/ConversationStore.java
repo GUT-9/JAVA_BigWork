@@ -31,7 +31,8 @@ public class ConversationStore {
     public static List<Message> loadMsg(String id) throws IOException {
         Path msgFile = DIR.resolve(id + ".json");
         if (!Files.exists(msgFile)) return new ArrayList<>();
-        return MAPPER.readValue(msgFile.toFile(), new TypeReference<List<Message>>() {});
+        return MAPPER.readValue(msgFile.toFile(), new TypeReference<>() {
+        });
     }
 
     /* 加载全部元信息（按 lastMsgTime 倒序） */

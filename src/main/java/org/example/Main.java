@@ -65,57 +65,16 @@ public class Main {
     /* ---------------- 功能 ---------------- */
     /* =================  自由对话 v2  ================= */
     private static void freeChat() throws IOException {
-        DateTimeFormatter FMT = DateTimeFormatter.ofPattern("MM-dd HH:mm");
-        while (true) {
-            ConsoleUtil.printLine("\n====== 自由对话 ======");
-            List<ConversationMeta> list = ConversationStore.listMeta();
-            if (list.isEmpty()) {
-                ConsoleUtil.printLine("暂无历史对话");
-            } else {
-                IntStream.range(0, list.size())
-                        .forEach(i -> ConsoleUtil.printLine(
-                                (i + 1) + ". " + list.get(i).getTitle() +
-                                        "  【" + Instant.ofEpochMilli(list.get(i).getLastMsgTime())
-                                        .atZone(ZoneId.systemDefault()).format(FMT) + "】"));
-            }
-            ConsoleUtil.printLine("0. 新建对话");
-            ConsoleUtil.printLine("提示：输入序号继续对话，或输入 d+序号 删除，q 返回");
-            String in = ConsoleUtil.readLine("请选择: ").trim();
-            if ("q".equalsIgnoreCase(in)) return;
-            if (in.startsWith("d")) {                // 删除逻辑
-                try {
-                    int idx = Integer.parseInt(in.substring(1)) - 1;
-                    if (idx < 0 || idx >= list.size()) {
-                        ConsoleUtil.printLine("序号无效");
-                        continue;
-                    }
-                    deleteConversation(list.get(idx));
-                } catch (NumberFormatException e) {
-                    ConsoleUtil.printLine("格式错误，示例：d2 表示删除第2条");
-                }
-                continue;   // 删完刷新列表
-            }
-            if ("0".equals(in)) {
-                newConversation();
-                continue;
-            }
-            // 继续历史对话
-            int idx;
-            try {
-                idx = Integer.parseInt(in) - 1;
-            } catch (NumberFormatException e) {
-                ConsoleUtil.printLine("输入无效");
-                continue;
-            }
-            if (idx < 0 || idx >= list.size()) {
-                ConsoleUtil.printLine("序号超出范围");
-                continue;
-            }
-            continueConversation(list.get(idx));
+        ConsoleUtil.printLine("\n====== 自由对话 ======");
+        ConsoleUtil.printLine("0. 新建对话");
+        ConversationMeta selected = HistorySelector.select(); // 统一选择器
+        if (selected == null) {           // 用户按 q
+            return;
         }
+        continueConversation(selected);   // 展开历史继续聊
     }
 
-    /* ----------------  子流程1：新建对话  ---------------- */
+    /* --------------- 子流程1：新建对话 --------------- */
     private static void newConversation() {
         String first = ConsoleUtil.readLine("请输入第一句话: ").trim();
         if (first.isEmpty()) return;
@@ -138,7 +97,7 @@ public class Main {
         }
     }
 
-    /* ----------------  子流程2：继续对话  ---------------- */
+    /* --------------- 子流程2：继续对话 --------------- */
     private static void continueConversation(ConversationMeta meta) {
         ConsoleUtil.printLine("---- 历史消息 ----");
         try {
@@ -158,16 +117,6 @@ public class Main {
             }
         } catch (IOException e) {
             ConsoleUtil.printLine("加载失败: " + e.getMessage());
-        }
-    }
-
-    /* ----------------  子流程3：删除对话  ---------------- */
-    private static void deleteConversation(ConversationMeta meta) {
-        try {
-            ConversationStore.delete(meta.getId());
-            ConsoleUtil.printLine("已删除: " + meta.getTitle());
-        } catch (IOException e) {
-            ConsoleUtil.printLine("删除失败: " + e.getMessage());
         }
     }
 
@@ -248,11 +197,18 @@ public class Main {
         }
     }
 
-    private static void showHistory() {
-        var list = CONV.getHistory();
-        if (list.isEmpty()) ConsoleUtil.printLine("暂无历史");
-        list.forEach(m -> ConsoleUtil.printLine(
-                (m.getRole().equals("user") ? "【你】" : "【AI】") + m.getContent()));
+    private static void showHistory() throws IOException {
+        ConsoleUtil.printLine("\n====== 查看历史 ======");
+        ConversationMeta selected = HistorySelector.select();
+        if (selected == null) return;
+        // 只读方式展示
+        try {
+            List<Message> msgs = ConversationStore.loadMsg(selected.getId());
+            msgs.forEach(m -> ConsoleUtil.printLine(
+                    (m.getRole().equals("user") ? "【你】" : "【AI】") + m.getContent()));
+        } catch (IOException e) {
+            ConsoleUtil.printLine("加载失败: " + e.getMessage());
+        }
     }
 
     private static void clearHistory() {
