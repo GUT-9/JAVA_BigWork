@@ -66,12 +66,10 @@ public class Main {
     /* =================  自由对话 v2  ================= */
     private static void freeChat() throws IOException {
         ConsoleUtil.printLine("\n====== 自由对话 ======");
-        ConsoleUtil.printLine("0. 新建对话");
-        ConversationMeta selected = HistorySelector.select(); // 统一选择器
-        if (selected == null) {           // 用户按 q
-            return;
-        }
-        continueConversation(selected);   // 展开历史继续聊
+        ConversationMeta selected = HistorySelector.select();
+        if (selected == null)                 return; // q
+        if ("NEW".equals(selected.getId()))   newConversation();
+        else                                  continueConversation(selected);
     }
 
     /* --------------- 子流程1：新建对话 --------------- */
