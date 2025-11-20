@@ -2,25 +2,45 @@ package org.example;
 
 import org.example.model.ConversationMeta;
 import org.example.model.Message;
+import org.example.model.User;
+import org.example.model.UserService;
 import org.example.util.ConsoleUtil;
 
 import java.io.IOException;
 import java.nio.file.Paths;
-
+import java.sql.SQLException;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.IntStream;
 
 public class Main {
     private static final String KEY = System.getenv().getOrDefault("DEEPSEEK_KEY",
             "sk-43e04ed77b224c2aa53dc642d6cf58c3");
     private static final DeepSeekClient CLIENT = new DeepSeekClient();
     private static final ConversationService CONV = new ConversationService();
+    private static final UserService USER_SERVICE = new UserService();
+
+    private static User currentUser = null;
 
     public static void main(String[] args) throws IOException {
+        // 测试数据库连接
+        System.out.println("正在初始化数据库...");
+        if (!org.example.config.DatabaseConfig.testConnection()) {
+            ConsoleUtil.printLine("❌ 数据库连接失败，请检查SQL Server服务是否启动");
+            return;
+        }
+
+
+
+        // 用户登录/注册
+        if (!userAuth()) {
+            ConsoleUtil.printLine("认证失败，程序退出");
+            return;
+        }
+
         try {
             CONV.load();
             ConsoleUtil.printLine("已加载历史对话 " + CONV.getHistory().size() + " 条");
@@ -47,9 +67,57 @@ public class Main {
         }
     }
 
+    private static boolean userAuth() {
+        while (true) {
+            ConsoleUtil.printLine("""
+                    ========== 用户认证 ==========
+                    1. 登录
+                    2. 注册
+                    3. 退出
+                    """);
+
+            String choice = ConsoleUtil.readLine("请选择: ").trim();
+            switch (choice) {
+                case "1" -> {
+                    String username = ConsoleUtil.readLine("用户名: ").trim();
+                    String password = ConsoleUtil.readLine("密码: ").trim();
+
+                    Optional<User> user = USER_SERVICE.login(username, password);
+                    if (user.isPresent()) {
+                        currentUser = user.get();
+                        ConsoleUtil.printLine("登录成功！欢迎 " + username);
+                        return true;
+                    } else {
+                        ConsoleUtil.printLine("用户名或密码错误！");
+                    }
+                }
+                case "2" -> {
+                    String username = ConsoleUtil.readLine("用户名: ").trim();
+                    if (USER_SERVICE.userExists(username)) {
+                        ConsoleUtil.printLine("用户名已存在！");
+                        continue;
+                    }
+                    String password = ConsoleUtil.readLine("密码: ").trim();
+
+                    if (USER_SERVICE.register(username, password)) {
+                        ConsoleUtil.printLine("注册成功！请登录");
+                    } else {
+                        ConsoleUtil.printLine("注册失败！");
+                    }
+                }
+                case "3" -> {
+                    return false;
+                }
+                default -> ConsoleUtil.printLine("输入无效");
+            }
+        }
+    }
+
     private static void menu() {
+        String username = currentUser != null ? currentUser.getUsername() : "未知用户";
         ConsoleUtil.printLine("""
                 ========== DeepSeek 控制台 v2.1 ==========
+                用户: %s
                 1. 自由对话（带上下文）
                 2. 中英互译
                 3. 代码补全/生成（自动写文件）
@@ -59,14 +127,14 @@ public class Main {
                 8. 查看历史对话
                 9. 清空历史对话
                 10. 退出
-                """);
+                """.formatted(username));
     }
 
     /* ---------------- 功能 ---------------- */
     /* =================  自由对话 v2  ================= */
     private static void freeChat() throws IOException {
         ConsoleUtil.printLine("\n====== 自由对话 ======");
-        ConversationMeta selected = HistorySelector.select();
+        ConversationMeta selected = HistorySelector.select(currentUser.getId());
         if (selected == null)                 return; // q
         if ("NEW".equals(selected.getId()))   newConversation();
         else                                  continueConversation(selected);
@@ -82,6 +150,7 @@ public class Main {
                 .title(first.length() > 20 ? first.substring(0, 20) + "…" : first)
                 .createTime(System.currentTimeMillis())
                 .lastMsgTime(System.currentTimeMillis())
+                .userId(currentUser.getId())  // 关联当前用户
                 .build();
         List<Message> msgs = new ArrayList<>();
         msgs.add(new Message("user", first));
@@ -89,8 +158,10 @@ public class Main {
             String resp = CLIENT.chatWithContext(KEY, msgs, first);
             msgs.add(new Message("assistant", resp));
             ConversationStore.save(meta, msgs);
+            // 保存到数据库
+            ConversationStore.saveMetaToDatabase(meta);
             ConsoleUtil.printLine("AI: " + resp);
-        } catch (IOException e) {
+        } catch (IOException | SQLException e) {
             ConsoleUtil.printLine("调用失败: " + e.getMessage());
         }
     }
@@ -99,7 +170,7 @@ public class Main {
     private static void continueConversation(ConversationMeta meta) {
         ConsoleUtil.printLine("---- 历史消息 ----");
         try {
-            List<Message> msgs = ConversationStore.loadMsg(meta.getId());
+            List<Message> msgs = ConversationStore.loadMsg(meta.getId(), currentUser.getId());
             msgs.forEach(m -> ConsoleUtil.printLine(
                     (m.getRole().equals("user") ? "【你】" : "【AI】") + m.getContent()));
             ConsoleUtil.printLine("------------------");
@@ -112,8 +183,10 @@ public class Main {
                 msgs.add(new Message("assistant", resp));
                 meta.setLastMsgTime(System.currentTimeMillis());
                 ConversationStore.save(meta, msgs);
+                // 更新数据库中的最后消息时间
+                ConversationStore.saveMetaToDatabase(meta);
             }
-        } catch (IOException e) {
+        } catch (IOException | SQLException e) {
             ConsoleUtil.printLine("加载失败: " + e.getMessage());
         }
     }
@@ -197,11 +270,11 @@ public class Main {
 
     private static void showHistory() throws IOException {
         ConsoleUtil.printLine("\n====== 查看历史 ======");
-        ConversationMeta selected = HistorySelector.select();
+        ConversationMeta selected = HistorySelector.select(currentUser.getId());
         if (selected == null) return;
         // 只读方式展示
         try {
-            List<Message> msgs = ConversationStore.loadMsg(selected.getId());
+            List<Message> msgs = ConversationStore.loadMsg(selected.getId(), currentUser.getId());
             msgs.forEach(m -> ConsoleUtil.printLine(
                     (m.getRole().equals("user") ? "【你】" : "【AI】") + m.getContent()));
         } catch (IOException e) {

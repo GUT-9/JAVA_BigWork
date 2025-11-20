@@ -14,4 +14,8 @@ public class ConversationMeta {
     private String title;               // 自动取第一条用户消息前20字
     private long createTime;
     private long lastMsgTime;
+    private Integer userId;             // 新增：关联用户ID
+
+    public ConversationMeta(String aNew, String 新建对话, int i, int i1) {
+    }
 }
