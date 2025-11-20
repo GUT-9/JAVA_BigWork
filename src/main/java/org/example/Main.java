@@ -16,7 +16,7 @@ import java.util.stream.IntStream;
 
 public class Main {
     private static final String KEY = System.getenv().getOrDefault("DEEPSEEK_KEY",
-            "sk-bee2886b58d44f76b28b82df50aea92a");
+            "sk-43e04ed77b224c2aa53dc642d6cf58c3");
     private static final DeepSeekClient CLIENT = new DeepSeekClient();
     private static final ConversationService CONV = new ConversationService();
 
