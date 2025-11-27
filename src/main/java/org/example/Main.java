@@ -6,6 +6,7 @@ import org.example.model.User;
 import org.example.model.UserService;
 import org.example.util.ConsoleUtil;
 
+
 import java.io.IOException;
 import java.nio.file.Paths;
 import java.sql.SQLException;
@@ -50,16 +51,16 @@ public class Main {
 
         while (true) {
             menu();
-            switch (ConsoleUtil.readLine("请选择 (1-10): ").trim()) {
+            switch (ConsoleUtil.readLine("请选择 (1-9): ").trim()) {
                 case "1" -> freeChat();
                 case "2" -> translate();
                 case "3" -> codeGen();
                 case "4" -> summary();
                 case "5" -> thesis();
                 case "6" -> filePipe();
-                case "8" -> showHistory();
-                case "9" -> clearHistory();
-                case "10" -> {
+                case "7" -> showHistory();
+                case "8" -> clearHistory();
+                case "9" -> {
                     ConsoleUtil.printLine("再见~"); return;
                 }
                 default -> ConsoleUtil.printLine("输入无效");
@@ -115,19 +116,42 @@ public class Main {
 
     private static void menu() {
         String username = currentUser != null ? currentUser.getUsername() : "未知用户";
-        ConsoleUtil.printLine("""
-                ========== DeepSeek 控制台 v2.1 ==========
-                用户: %s
-                1. 自由对话（带上下文）
-                2. 中英互译
-                3. 代码补全/生成（自动写文件）
-                4. 文本摘要
-                5. 一键论文（Word）
-                6. 文件管道（读→处理→写）
-                8. 查看历史对话
-                9. 清空历史对话
-                10. 退出
-                """.formatted(username));
+
+// ANSI 颜色代码
+        final String CYAN = "\033[96m";
+        final String YELLOW = "\033[93m";
+        final String GRAY = "\033[90m";
+        final String BLUE = "\033[94m";
+        final String RESET = "\033[0m";
+
+        String menu = String.format(
+                CYAN + """
+    ╔═══════════════════════════════════════════════════╗
+    ║                DeepSeek 控制台 v2.1                ║
+    ║                    用户: """ + BLUE + "%-26s" + CYAN + """ 
+    ║
+    ╠═══════════════════════════════════════════════════╣
+    """ + RESET +
+                         YELLOW + """
+    ║  🗨    1. 自由对话（带上下文）                        ║
+    ║  🔤   2. 中英互译                                  ║
+    ║  💻   3. 代码补全/生成（自动写文件）                   ║
+    ║  📄   4. 文本摘要                                  ║
+    ║  📝   5. 一键论文（Word）                           ║
+    ║  📂   6. 文件管道（读→处理→写）                      ║
+    ║  📊   7. 查看历史对话                               ║
+    ║  🗑    8. 清空历史对话                               ║
+    ║  ⚠    9. 退出系统                                  ║
+    """ + RESET +
+                        GRAY + """
+    ╠═══════════════════════════════════════════════════╣
+    ║         输入选项编号 [1-9] 并按 Enter 确认            ║
+    ╚═══════════════════════════════════════════════════╝
+    """ + RESET,
+                username
+        );
+
+        ConsoleUtil.printLine(menu);
     }
 
     /* ---------------- 功能 ---------------- */
@@ -233,18 +257,65 @@ public class Main {
 
     private static void thesis() {
         String topic = ConsoleUtil.readLine("论文主题: ");
-        ConsoleUtil.printLine("正在生成大纲与正文...");
-        String outline = callChat("请为主题《" + topic + "》写一份三级大纲，用罗马数字编号：");
-        String body = callChat("根据以下大纲写一篇 800 字左右论文正文：\n" + outline);
-        String file = "output/" + topic.replaceAll("\\s+", "_") + ".docx";
+
+        // 获取用户指定的字数
+        int wordCount = getWordCountFromUser();
+
+        ConsoleUtil.printLine("正在生成 " + wordCount + " 字的大纲与正文...");
+
+        // 根据字数调整大纲和正文的提示词
+        String outlinePrompt = buildOutlinePrompt(topic, wordCount);
+        String outline = callChat(outlinePrompt);
+
+        String bodyPrompt = buildBodyPrompt(outline, wordCount);
+        String body = callChat(bodyPrompt);
+
+        String file = "output/" + topic.replaceAll("\\s+", "_") + "_" + wordCount + "字.docx";
 
         try {
             WordExporter.export(topic, outline, body, file);
-
-            ConsoleUtil.printLine("Word 已生成: " + Paths.get(file).toAbsolutePath());
+            ConsoleUtil.printLine("✅ Word 已生成: " + Paths.get(file).toAbsolutePath());
+            ConsoleUtil.printLine("📝 生成字数: " + wordCount + " 字");
         } catch (IOException e) {
-            ConsoleUtil.printLine("生成 Word 失败: " + e.getMessage());
+            ConsoleUtil.printLine("❌ 生成 Word 失败: " + e.getMessage());
         }
+    }
+
+    private static int getWordCountFromUser() {
+        while (true) {
+            String wordCountInput = ConsoleUtil.readLine("论文字数 (100-5000，默认800): ").trim();
+
+            if (wordCountInput.isEmpty()) {
+                return 800;
+            }
+
+            try {
+                int wordCount = Integer.parseInt(wordCountInput);
+                if (wordCount < 100) {
+                    ConsoleUtil.printLine("❌ 字数不能少于100字，请重新输入");
+                } else if (wordCount > 5000) {
+                    ConsoleUtil.printLine("❌ 字数不能超过5000字，请重新输入");
+                } else {
+                    return wordCount;
+                }
+            } catch (NumberFormatException e) {
+                ConsoleUtil.printLine("❌ 请输入有效的数字");
+            }
+        }
+    }
+
+    private static String buildOutlinePrompt(String topic, int wordCount) {
+        if (wordCount <= 1000) {
+            return "请为主题《" + topic + "》写一份简洁的三级大纲，用罗马数字编号（适合" + wordCount + "字短文）：";
+        } else if (wordCount <= 3000) {
+            return "请为主题《" + topic + "》写一份详细的三级大纲，用罗马数字编号（适合" + wordCount + "字论文）：";
+        } else {
+            return "请为主题《" + topic + "》写一份全面的四级大纲，用罗马数字编号（适合" + wordCount + "字长文）：";
+        }
+    }
+
+    private static String buildBodyPrompt(String outline, int wordCount) {
+        return "根据以下大纲写一篇 " + wordCount + " 字左右的论文正文，要求结构完整、内容充实、逻辑清晰：\n" + outline;
     }
 
     private static void filePipe() {
@@ -260,7 +331,7 @@ public class Main {
                 default -> content;
             };
             String result = opt.equals("3") ? callCode(prompt) : callChat(prompt);
-            String out = ConsoleUtil.readLine("输出文件路径: ");
+            String out = ConsoleUtil.readLine("输出目标文件路径(建议填写为“你想要的文件名.md”): ");
             FileTool.write(out, result);
             ConsoleUtil.printLine("处理完成，已写入: " + Paths.get(out).toAbsolutePath());
         } catch (IOException e) {
