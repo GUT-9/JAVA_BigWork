@@ -49,9 +49,12 @@ public class Main {
             ConsoleUtil.printLine("未找到历史，开始新会话");
         }
 
-        while (true) {
+        boolean running = true;
+        while (running) {
+            clearScreen();
             menu();
-            switch (ConsoleUtil.readLine("请选择 (1-9): ").trim()) {
+            String choice = ConsoleUtil.readLine("请选择 (1-9): ").trim();
+            switch (choice) {
                 case "1" -> freeChat();
                 case "2" -> translate();
                 case "3" -> codeGen();
@@ -61,11 +64,23 @@ public class Main {
                 case "7" -> showHistory();
                 case "8" -> clearHistory();
                 case "9" -> {
-                    ConsoleUtil.printLine("再见~"); return;
+                    ConsoleUtil.printLine("再见~");
+                    running = false;
                 }
-                default -> ConsoleUtil.printLine("输入无效");
+                default -> {
+                    ConsoleUtil.printLine("输入无效");
+                    pause();
+                }
             }
         }
+    }
+    private static void clearScreen() {
+        System.out.print("\033[H\033[2J");
+        System.out.flush();
+    }
+
+    private static void pause() {
+        ConsoleUtil.readLine("按回车继续...");
     }
 
     private static boolean userAuth() {
@@ -156,65 +171,146 @@ public class Main {
 
     /* ---------------- 功能 ---------------- */
     /* =================  自由对话 v2  ================= */
+    /* =================  自由对话优化版 ================= */
     private static void freeChat() throws IOException {
-        ConsoleUtil.printLine("\n====== 自由对话 ======");
-        ConversationMeta selected = HistorySelector.select(currentUser.getId());
-        if (selected == null)                 return; // q
-        if ("NEW".equals(selected.getId()))   newConversation();
-        else                                  continueConversation(selected);
+        boolean inFreeChat = true;
+
+        while (inFreeChat) {
+            clearScreen();
+            ConsoleUtil.printLine("\n" + "=".repeat(40));
+            ConsoleUtil.printLine("          自由对话模式");
+            ConsoleUtil.printLine("=".repeat(40));
+
+            ConversationMeta selected = HistorySelector.select(currentUser.getId());
+
+            if (selected == null) {
+                // 用户在消息列表输入q，退出自由对话模式
+                inFreeChat = false;
+            } else if ("NEW".equals(selected.getId())) {
+                // 新建对话
+                boolean conversationCompleted = newConversation();
+                // 新建对话结束后直接回到消息列表，不询问
+            } else {
+                // 继续现有对话
+                continueConversation(selected);
+                // 对话结束后直接回到消息列表，不询问
+            }
+        }
     }
 
     /* --------------- 子流程1：新建对话 --------------- */
-    private static void newConversation() {
-        String first = ConsoleUtil.readLine("请输入第一句话: ").trim();
-        if (first.isEmpty()) return;
+    /* --------------- 新建对话 --------------- */
+    private static boolean newConversation() {
+        clearScreen();
+        ConsoleUtil.printLine("\n" + "=".repeat(40));
+        ConsoleUtil.printLine("          新建对话");
+        ConsoleUtil.printLine("=".repeat(40));
+
+        String first = ConsoleUtil.readLine("\n请输入第一句话: ").trim();
+        if (first.isEmpty()) {
+            return false;
+        }
+
         String id = UUID.randomUUID().toString();
         ConversationMeta meta = ConversationMeta.builder()
                 .id(id)
                 .title(first.length() > 20 ? first.substring(0, 20) + "…" : first)
                 .createTime(System.currentTimeMillis())
                 .lastMsgTime(System.currentTimeMillis())
-                .userId(currentUser.getId())  // 关联当前用户
+                .userId(currentUser.getId())
                 .build();
         List<Message> msgs = new ArrayList<>();
         msgs.add(new Message("user", first));
+
         try {
+            // 显示处理中提示
+            System.out.print("🤔 AI正在思考中...");
             String resp = CLIENT.chatWithContext(KEY, msgs, first);
+            // 清除处理中提示
+            System.out.print("\r✅ AI回复完成！\n\n");
+
             msgs.add(new Message("assistant", resp));
             ConversationStore.save(meta, msgs);
-            // 保存到数据库
             ConversationStore.saveMetaToDatabase(meta);
-            ConsoleUtil.printLine("AI: " + resp);
+
+            ConsoleUtil.printLine("🤖 AI: " + resp);
+            ConsoleUtil.printLine("\n" + "─".repeat(50));
+
+            // 新建对话完成后直接进入继续对话流程
+            return continueSingleConversation(meta, msgs);
+
         } catch (IOException | SQLException e) {
-            ConsoleUtil.printLine("调用失败: " + e.getMessage());
+            System.out.print("\r❌ 调用失败\n");
+            ConsoleUtil.printLine("错误: " + e.getMessage());
+            return false;
         }
     }
-
     /* --------------- 子流程2：继续对话 --------------- */
+    /* --------------- 继续对话 --------------- */
     private static void continueConversation(ConversationMeta meta) {
-        ConsoleUtil.printLine("---- 历史消息 ----");
         try {
             List<Message> msgs = ConversationStore.loadMsg(meta.getId(), currentUser.getId());
-            msgs.forEach(m -> ConsoleUtil.printLine(
-                    (m.getRole().equals("user") ? "【你】" : "【AI】") + m.getContent()));
-            ConsoleUtil.printLine("------------------");
-            while (true) {
-                String in = ConsoleUtil.readLine("你（输入 q 返回）: ").trim();
-                if ("q".equalsIgnoreCase(in)) break;
-                msgs.add(new Message("user", in));
-                String resp = CLIENT.chatWithContext(KEY, msgs, in);
-                ConsoleUtil.printLine("AI: " + resp);
-                msgs.add(new Message("assistant", resp));
-                meta.setLastMsgTime(System.currentTimeMillis());
-                ConversationStore.save(meta, msgs);
-                // 更新数据库中的最后消息时间
-                ConversationStore.saveMetaToDatabase(meta);
-            }
-        } catch (IOException | SQLException e) {
-            ConsoleUtil.printLine("加载失败: " + e.getMessage());
+            continueSingleConversation(meta, msgs);
+        } catch (IOException e) {
+            ConsoleUtil.printLine("❌ 加载失败: " + e.getMessage());
+            pause();
         }
     }
 
+    /* --------------- 单次对话流程 --------------- */
+    private static boolean continueSingleConversation(ConversationMeta meta, List<Message> msgs) {
+        boolean inConversation = true;
+
+        while (inConversation) {
+            clearScreen();
+            ConsoleUtil.printLine("\n📝 对话: " + meta.getTitle());
+            ConsoleUtil.printLine("─".repeat(50));
+
+            // 显示最近消息
+            int startIndex = Math.max(0, msgs.size() - 5);
+            for (int i = startIndex; i < msgs.size(); i++) {
+                Message m = msgs.get(i);
+                String prefix = m.getRole().equals("user") ? "👤 你" : "🤖 AI";
+                ConsoleUtil.printLine(prefix + ": " + m.getContent());
+                if (i < msgs.size() - 1) {
+                    ConsoleUtil.printLine("─".repeat(30));
+                }
+            }
+            ConsoleUtil.printLine("─".repeat(50));
+
+            String in = ConsoleUtil.readLine("\n💭 你的消息 (输入 q 返回消息列表): ").trim();
+            if ("q".equalsIgnoreCase(in)) {
+                inConversation = false;
+            } else if (!in.isEmpty()) {
+                // 处理用户输入
+                msgs.add(new Message("user", in));
+
+                // 显示处理中提示
+                System.out.print("🤔 AI正在思考中...");
+                try {
+                    String resp = CLIENT.chatWithContext(KEY, msgs, in);
+                    // 清除处理中提示
+                    System.out.print("\r✅ AI回复完成！\n\n");
+
+                    ConsoleUtil.printLine("🤖 AI: " + resp);
+                    msgs.add(new Message("assistant", resp));
+                    meta.setLastMsgTime(System.currentTimeMillis());
+                    ConversationStore.save(meta, msgs);
+                    ConversationStore.saveMetaToDatabase(meta);
+
+                    ConsoleUtil.printLine("─".repeat(50));
+                    pause(); // 等待用户查看回复
+
+                } catch (IOException | SQLException e) {
+                    System.out.print("\r❌ 调用失败\n");
+                    ConsoleUtil.printLine("错误: " + e.getMessage());
+                    pause();
+                }
+            }
+        }
+
+        return true;
+    }
     private static void translate() {
         String q = ConsoleUtil.readLine("文本: ");
         String lang = ConsoleUtil.readLine("目标语言 (zh/en): ");

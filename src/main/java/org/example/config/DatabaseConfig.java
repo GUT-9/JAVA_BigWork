@@ -23,9 +23,9 @@ public class DatabaseConfig {
 
     public static Connection getConnection() throws SQLException {
         try {
-            System.out.println("尝试连接数据库...");
+            //System.out.println("尝试连接数据库...");
             Connection conn = DriverManager.getConnection(URL, USER, PASSWORD);
-            System.out.println("✅ 数据库连接成功");
+            //System.out.println("✅ 数据库连接成功");
             return conn;
         } catch (SQLException e) {
             System.err.println("❌ 数据库连接失败: " + e.getMessage());
