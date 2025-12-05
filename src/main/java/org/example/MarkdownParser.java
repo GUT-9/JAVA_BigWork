@@ -306,15 +306,15 @@ public class MarkdownParser {
      * 获取标题样式名称
      */
     private static String getHeaderStyle(int level) {
-        switch (level) {
-            case 1: return "Heading1";
-            case 2: return "Heading2";
-            case 3: return "Heading3";
-            case 4: return "Heading4";
-            case 5: return "Heading5";
-            case 6: return "Heading6";
-            default: return "Normal";
-        }
+        return switch (level) {
+            case 1 -> "Heading1";
+            case 2 -> "Heading2";
+            case 3 -> "Heading3";
+            case 4 -> "Heading4";
+            case 5 -> "Heading5";
+            case 6 -> "Heading6";
+            default -> "Normal";
+        };
     }
 
     /**

@@ -11,7 +11,6 @@ import java.io.IOException;
 import java.nio.file.Paths;
 import java.sql.SQLException;
 import java.time.*;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -148,15 +147,15 @@ public class Main {
     ╚═══════════════════════════════════════════════════╝
     """ + RESET +
                          YELLOW + """
-      🗨    1. 自由对话（带上下文）                        
-      🔤   2. 中英互译                                  
-      💻   3. 代码补全/生成（自动写文件）                   
-      📄   4. 文本摘要                                  
-      📝   5. 一键论文（Word）                           
-      📂   6. 文件管道（读→处理→写）                      
-      📊   7. 查看历史对话                               
-      🗑    8. 清空历史对话                               
-      ⚠    9. 退出系统                                  
+      🗨    1. 自由对话（带上下文）
+      🔤   2. 中英互译
+      💻   3. 代码补全/生成（自动写文件）
+      📄   4. 文本摘要
+      📝   5. 一键论文（Word）
+      📂   6. 文件管道（读→处理→写）
+      📊   7. 查看历史对话
+      🗑    8. 清空历史对话
+      ⚠    9. 退出系统
     """ + RESET +
                         GRAY + """
     ╔═══════════════════════════════════════════════════╗
