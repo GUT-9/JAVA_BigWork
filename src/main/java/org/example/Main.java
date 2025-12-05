@@ -366,15 +366,47 @@ public class Main {
         String bodyPrompt = buildBodyPrompt(outline, wordCount);
         String body = callChat(bodyPrompt);
 
+        // 清理和预处理Markdown内容
+        outline = preprocessMarkdown(outline);
+        body = preprocessMarkdown(body);
+
         String file = "output/" + topic.replaceAll("\\s+", "_") + "_" + wordCount + "字.docx";
 
         try {
             WordExporter.export(topic, outline, body, file);
             ConsoleUtil.printLine("✅ Word 已生成: " + Paths.get(file).toAbsolutePath());
             ConsoleUtil.printLine("📝 生成字数: " + wordCount + " 字");
+            ConsoleUtil.printLine("📋 格式: 已自动解析Markdown格式（粗体、斜体、标题等）");
         } catch (IOException e) {
             ConsoleUtil.printLine("❌ 生成 Word 失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 预处理Markdown文本
+     */
+    private static String preprocessMarkdown(String text) {
+        if (text == null || text.isEmpty()) {
+            return text;
+        }
+
+        // 去除可能的多余前缀
+        if (text.startsWith("大纲：")) {
+            text = text.substring(3);
+        }
+        if (text.startsWith("正文：")) {
+            text = text.substring(3);
+        }
+
+        // 去除AI回复的常见前缀
+        text = text.replaceAll("^好的，[^\\n]+\\n", "");
+        text = text.replaceAll("^遵照您的要求[^\\n]+\\n", "");
+        text = text.replaceAll("^以下是根据[^\\n]+\\n", "");
+
+        // 标准化换行符
+        text = text.replaceAll("\r\n", "\n");
+
+        return text.trim();
     }
 
     private static int getWordCountFromUser() {
