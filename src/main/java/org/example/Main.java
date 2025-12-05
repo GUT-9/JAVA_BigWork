@@ -1,5 +1,6 @@
 package org.example;
 
+import org.example.config.ConfigManager;
 import org.example.model.ConversationMeta;
 import org.example.model.Message;
 import org.example.model.User;
@@ -17,8 +18,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 public class Main {
-    private static final String KEY = System.getenv().getOrDefault("DEEPSEEK_KEY",
-            "sk-43e04ed77b224c2aa53dc642d6cf58c3");
+    // 移除硬编码的KEY
+    // private static final String KEY = System.getenv().getOrDefault("DEEPSEEK_KEY",
+    //        "sk-43e04ed77b224c2aa53dc642d6cf58c3");
+
+    private static String currentApiKey = null; // 动态获取API密钥
     private static final DeepSeekClient CLIENT = new DeepSeekClient();
     private static final ConversationService CONV = new ConversationService();
     private static final UserService USER_SERVICE = new UserService();
@@ -43,7 +47,7 @@ public class Main {
 
         try {
             CONV.load();
-            ConsoleUtil.printLine("已加载历史对话 " + CONV.getHistory().size() + " 条");
+            ConsoleUtil.printLine("已加载历史对话");
         } catch (IOException e) {
             ConsoleUtil.printLine("未找到历史，开始新会话");
         }
@@ -66,6 +70,7 @@ public class Main {
                     ConsoleUtil.printLine("再见~");
                     running = false;
                 }
+                case "config" -> ConfigManager.openConfigMenu();
                 default -> {
                     ConsoleUtil.printLine("输入无效");
                     pause();
@@ -73,13 +78,58 @@ public class Main {
             }
         }
     }
+    /**
+     * 初始化API密钥
+     */
+    private static void initializeApiKey() {
+        currentApiKey = ConfigManager.getApiKey();
+
+        if (currentApiKey == null || currentApiKey.isEmpty()) {
+            ConsoleUtil.printLine("⚠️ 警告：未配置API密钥，部分功能可能受限");
+            ConsoleUtil.printLine("   输入 'config' 进入配置菜单进行设置");
+        } else {
+            // 验证密钥格式（简单检查）
+            if (currentApiKey.startsWith("sk-")) {
+                ConsoleUtil.printLine("✅ API密钥已加载");
+            } else {
+                ConsoleUtil.printLine("⚠️ 警告：API密钥格式可能不正确");
+            }
+        }
+    }
+
+    /**
+     * 获取当前API密钥（动态检查）
+     */
+    private static String getApiKey() {
+        if (currentApiKey == null || currentApiKey.isEmpty()) {
+            currentApiKey = ConfigManager.getApiKey();
+        }
+        return currentApiKey;
+    }
+
+    /**
+     * 检查API密钥是否有效
+     */
+    private static boolean checkApiKey() {
+        String key = getApiKey();
+        if (key == null || key.isEmpty()) {
+            ConsoleUtil.printLine("❌ 未配置API密钥，无法使用此功能");
+            ConsoleUtil.printLine("   请先配置API密钥：");
+            ConsoleUtil.printLine("   1. 在主菜单输入 'config' 进入配置");
+            ConsoleUtil.printLine("   2. 设置环境变量 DEEPSEEK_API_KEY");
+            ConsoleUtil.printLine("   3. 在配置文件中配置");
+            return false;
+        }
+        return true;
+    }
+
     private static void clearScreen() {
         System.out.print("\033[H\033[2J");
         System.out.flush();
     }
 
     private static void pause() {
-        ConsoleUtil.readLine("按回车继续...");
+        ConsoleUtil.readLine("按回车继续...\n");
     }
 
     private static boolean userAuth() {
@@ -131,22 +181,40 @@ public class Main {
     private static void menu() {
         String username = currentUser != null ? currentUser.getUsername() : "未知用户";
 
-// ANSI 颜色代码
+        // ANSI 颜色代码
         final String CYAN = "\033[96m";
         final String YELLOW = "\033[93m";
         final String GRAY = "\033[90m";
         final String BLUE = "\033[94m";
+        final String RED = "\033[91m";
+        final String GREEN = "\033[92m";
         final String RESET = "\033[0m";
 
-        String menu = String.format(
-                CYAN + """
+        // 构建API密钥状态行
+        String apiStatusLine;
+        if (getApiKey() != null) {
+            apiStatusLine = "                API密钥:" + GREEN + " ✓ 已配置 " + CYAN;
+        } else {
+            apiStatusLine = "                API密钥:" + RED + " ✗ 未配置 " + CYAN;
+        }
+
+        // 构建用户名行（限制用户名长度）
+        String displayUsername = username;
+        if (displayUsername.length() > 18) {
+            displayUsername = displayUsername.substring(0, 15) + "...";
+        }
+        String userLine = "                    用户:" + BLUE + String.format("%-18s", displayUsername) + CYAN;
+
+        // 构建菜单字符串
+        String menu = CYAN + """
     ╔═══════════════════════════════════════════════════╗
                     DeepSeek 控制台
-                         用户:""" + BLUE + "%-26s" + CYAN + """ 
-
+    """ +
+                userLine + "\n" +
+                apiStatusLine + "\n" + CYAN + """
     ╚═══════════════════════════════════════════════════╝
     """ + RESET +
-                         YELLOW + """
+                YELLOW + """
       🗨    1. 自由对话（带上下文）
       🔤   2. 中英互译
       💻   3. 代码补全/生成（自动写文件）
@@ -157,21 +225,34 @@ public class Main {
       🗑    8. 清空历史对话
       ⚠    9. 退出系统
     """ + RESET +
-                        GRAY + """
+                GRAY + """
     ╔═══════════════════════════════════════════════════╗
     ║         输入选项编号 [1-9] 并按 Enter 确认            ║
+    ║         输入 'config' 进入配置管理                    ║
     ╚═══════════════════════════════════════════════════╝
-    """ + RESET,
-                username
-        );
+    """ + RESET;
 
         ConsoleUtil.printLine(menu);
+
+        // 如果没有配置API密钥，显示提醒
+        if (getApiKey() == null) {
+            ConsoleUtil.printLine(RED + """
+    ╔═══════════════════════════════════════════════════╗
+    ║  ⚠️  警告：未配置API密钥，部分功能可能受限              ║
+    ║     请在主菜单输入 'config' 进入配置管理               ║
+    ╚═══════════════════════════════════════════════════╝
+    """ + RESET);
+        }
     }
 
     /* ---------------- 功能 ---------------- */
     /* =================  自由对话 v2  ================= */
     /* =================  自由对话优化版 ================= */
     private static void freeChat() throws IOException {
+        if (!checkApiKey()) {
+            pause();
+            return;
+        }
         boolean inFreeChat = true;
 
         while (inFreeChat) {
@@ -200,6 +281,9 @@ public class Main {
     /* --------------- 子流程1：新建对话 --------------- */
     /* --------------- 新建对话 --------------- */
     private static boolean newConversation() {
+        if (!checkApiKey()) {
+            return false;
+        }
         clearScreen();
         ConsoleUtil.printLine("\n" + "=".repeat(40));
         ConsoleUtil.printLine("          新建对话");
@@ -224,7 +308,7 @@ public class Main {
         try {
             // 显示处理中提示
             System.out.print("🤔 AI正在思考中...");
-            String resp = CLIENT.chatWithContext(KEY, msgs, first);
+            String resp = CLIENT.chatWithContext(getApiKey(), msgs, first);
             // 清除处理中提示
             System.out.print("\r✅ AI回复完成！\n\n");
 
@@ -287,7 +371,7 @@ public class Main {
                 // 显示处理中提示
                 System.out.print("🤔 AI正在思考中...");
                 try {
-                    String resp = CLIENT.chatWithContext(KEY, msgs, in);
+                    String resp = CLIENT.chatWithContext(getApiKey(), msgs, in);
                     // 清除处理中提示
                     System.out.print("\r✅ AI回复完成！\n\n");
 
@@ -490,18 +574,27 @@ public class Main {
     }
 
     private static String callChat(String prompt) {
+        String key = getApiKey();
+        if (key == null || key.isEmpty()) {
+            return "❌ 未配置API密钥，请先配置";
+        }
         try {
-            return CLIENT.chat(KEY, prompt);
+            return CLIENT.chat(key, prompt);
         } catch (IOException e) {
             return "调用失败: " + e.getMessage();
         }
     }
 
     private static String callCode(String prompt) {
+        String key = getApiKey();
+        if (key == null || key.isEmpty()) {
+            return "❌ 未配置API密钥，请先配置";
+        }
         try {
-            return CLIENT.code(KEY, prompt);
+            return CLIENT.code(key, prompt);
         } catch (IOException e) {
             return "调用失败: " + e.getMessage();
         }
     }
+
 }
