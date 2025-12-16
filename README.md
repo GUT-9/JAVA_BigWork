@@ -12,6 +12,30 @@ Deepseek的API在main的最前面。不能用了可能是欠费或者是我把ke
 
 
 ## 功能展示
+### DeepSeek API参数配置
+账号登录后进入主菜单界面，输入`config`进入配置管理。
+
+<div align="center">
+
+主菜单界面
+
+<img src="./img/主菜单界面.png">
+
+<br><br>
+
+配置管理界面
+
+<img src="./img/配置管理.png">
+
+
+
+</div>
+
+支持查看当前配置，选择模型，设置模型`temperature` 设置 DeepSeekAPI Key
+![](./img/查看当前配置.png)
+![](./img/设置默认模型.png)
+
+
 ### 1
 ### 2
 ### 3
@@ -22,3 +46,4 @@ Deepseek的API在main的最前面。不能用了可能是欠费或者是我把ke
 生成结果如图，存在md排版问题。正在改进。
 ![](./img/文件读写2.png)
 ### 6 
+
